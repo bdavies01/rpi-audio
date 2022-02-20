@@ -71,12 +71,12 @@ def start_logging():
             wf = wave.open(wav_string, 'wb')
             logger = setup_logger("audio_logger", log_string)
             logger.info('Example of logging with ISO-8601 timestamp')
-            end_time = dt + timedelta(seconds = 10) #how long our sound files are
+            end_time = dt + timedelta(minutes=60) #how long our sound files are
             while True:
                 curr_time = datetime.now()
                 if curr_time >= end_time:
                     break
-                data = stream.read(CHUNK)
+                data = stream.read(CHUNK, exception_on_overflow=False)
                 frames.append(data)
                 # conn.send(data)
             del logger
