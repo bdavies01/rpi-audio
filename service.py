@@ -1,42 +1,20 @@
 #!/usr/bin/env python3
-import sys
 import pyaudio
 import wave
-import re #regular expression
 from datetime import datetime, timedelta
-#server
-import socket
 import logging
 import gc
-from pydub import AudioSegment
 import os
+import glob
+from pydub import AudioSegment
+from multiprocessing import Process
 
 formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
 
-# pi_etherNet_server = '169.254.100.53'
-
-# TCP_IP = pi_etherNet_server #always use server IP
-# TCP_PORT = 5005
-# # BUFFER_SIZE = 1024 #?? NOT USED HERE...
-
-# thisSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-# # https://stackoverflow.com/questions/6380057/python-binding-socket-address-already-in-use
-# thisSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # attempt to reduce TIME_WAIT after socket close, ask Matt its kinda weird but helpful
-# thisSocket.bind((TCP_IP, TCP_PORT))
-# thisSocket.listen(1) # I think this holts program until one connection is made
-# conn, addr = thisSocket.accept() #blocks and waits for connection, conn is connection object, addr is
-# print ('Connection address:', addr)
-
-
-#CHUNK is frames in buffer
-CHUNK = 1024
+CHUNK = 1024 #CHUNK is frames in buffer
 FORMAT = pyaudio.paInt24 #must save in format 24
-#CHANNELS is stereo
-CHANNELS = 2
-# Sample Rate
+CHANNELS = 2 #CHANNELS is stereo
 RATE = 32000 #new setting at 32
-# RATE = 44100
-RECORD_SECONDS = 60 #For Testing
 
 p = pyaudio.PyAudio()
 
@@ -58,40 +36,78 @@ def setup_logger(name, log_file, level=logging.INFO):
 
     return logger
 
+# Convert all of the .wav files in a given directory to .flac files
+
+def wav_to_flac(dir):
+    file_list = glob.glob(dir + '/*.wav')
+    file_list.sort()
+    print("called")
+    print(dir)
+    for file in file_list: #want to convert all the files except the one currently being used
+        dst = file[:-4] + '.flac'
+
+        sound = AudioSegment.from_wav(file)
+        sound.export(dst, format="flac")
+
+        del sound
+        gc.collect()
+        os.remove(file)
+
+# Initialize logging MEMS microphone data into a subdirectory called 'audio_log_data'
+# Every day a new directory is created corresponding to the current date. Within that 
+# directory, every hour a subdirectory is created corresponding to the hour. Every 5
+# minutes, a .log and .wav file are created and stored in the innermost file. 
+
 def start_logging():
     try:
         while True:
+            dt_outer = datetime.now()
 
-            frames = []
-            dt = datetime.now()
-            log_string = dt.strftime("audio_log_data/logfile_%Y_%m_%d_%H:%M:%S.log")
-            wav_string = dt.strftime("audio_log_data/soundfile_%Y_%m_%d_%H:%M:%S.wav")
-            flac_string = dt.strftime("audio_log_data/soundfile_%Y_%m_%d_%H:%M:%S.flac")
-
-            wf = wave.open(wav_string, 'wb')
-            logger = setup_logger("audio_logger", log_string)
-            logger.info('Example of logging with ISO-8601 timestamp')
-            end_time = dt + timedelta(minutes=60) #how long our sound files are
             while True:
-                curr_time = datetime.now()
-                if curr_time >= end_time:
+                dt_mid = datetime.now()
+                path = dt_mid.strftime('/home/bert/audio_log_data/%Y_%m_%d')
+                if not os.path.exists(path):
+                    os.makedirs(path)
+
+                if dt_mid - dt_outer > timedelta(days=1): # how often to make a main dir change to 1 day
                     break
-                data = stream.read(CHUNK, exception_on_overflow=False)
-                frames.append(data)
-                # conn.send(data)
-            del logger
-            gc.collect()
+                while True:
+                    dt_inner = datetime.now()
+                    if dt_inner - dt_mid > timedelta(seconds=60): # how often to make a subdir change to 1 hour
+                        break
 
-            wf.setnchannels(CHANNELS)
-            wf.setsampwidth(p.get_sample_size(FORMAT))
-            wf.setframerate(RATE)
-            wf.writeframes(b''.join(frames))
-            wf.close()
+                    old_path = path_inner
+                    path_inner = path + '/' + dt_inner.strftime('%H:%M')
+                    if not os.path.exists(path_inner):
+                        os.makedirs(path_inner)
+                        proc = Process(target=wav_to_flac, args=(old_path,), daemon=True)
+                        proc.start()
+                    
+                    frames = []
+                    log_string = path_inner + '/' + dt_inner.strftime('logfile_%H:%M:%S.log')
+                    wav_string = path_inner + '/' + dt_inner.strftime('soundfile_%H:%M:%S.wav')
 
-            # convert to flac/delete wav file for storage
-            # sound = AudioSegment.from_wav(wav_string)
-            # sound.export(flac_string, format="flac")
-            # os.remove(wav_string)
+                    wf = wave.open(wav_string, 'wb')
+                    logger = setup_logger('audio_logger', log_string)
+                    logger.info('Example of logging with ISO-8601 timestamp')
+                    end_time = dt_inner + timedelta(seconds=5) # how long our sound files are, change to 5 minutes
+
+                    while True:
+                        curr_time = datetime.now()
+                        if curr_time >= end_time:
+                            break
+                        data = stream.read(CHUNK, exception_on_overflow=False)
+                        frames.append(data)
+                        # conn.send(data)
+                    del logger
+                    gc.collect()
+
+                    wf.setnchannels(CHANNELS)
+                    wf.setsampwidth(p.get_sample_size(FORMAT))
+                    wf.setframerate(RATE)
+                    wf.writeframes(b''.join(frames))
+                    wf.close()
+                
 
     except KeyboardInterrupt:
         # thisSocket.close()
