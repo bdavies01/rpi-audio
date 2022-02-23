@@ -41,9 +41,7 @@ def setup_logger(name, log_file, level=logging.INFO):
 def wav_to_flac(dir):
     file_list = glob.glob(dir + '/*.wav')
     file_list.sort()
-    print("called")
-    print(dir)
-    for file in file_list: #want to convert all the files except the one currently being used
+    for file in file_list: 
         dst = file[:-4] + '.flac'
 
         sound = AudioSegment.from_wav(file)
@@ -55,8 +53,10 @@ def wav_to_flac(dir):
 
 # Initialize logging MEMS microphone data into a subdirectory called 'audio_log_data'
 # Every day a new directory is created corresponding to the current date. Within that 
-# directory, every hour a subdirectory is created corresponding to the hour. Every 5
-# minutes, a .log and .wav file are created and stored in the innermost file. 
+# directory, every hour a subdirectory is created corresponding to the hour. 
+# Additionally, each hour a new process will spawn that converts/compresses all of
+# the .wav files from past hour into .flac files. Every 5 minutes, a .log and .wav 
+# file are created and stored in the innermost file. 
 
 def start_logging():
     try:
@@ -71,13 +71,14 @@ def start_logging():
 
                 if dt_mid - dt_outer > timedelta(days=1): # how often to make a main dir change to 1 day
                     break
+                path_inner = ''
                 while True:
                     dt_inner = datetime.now()
-                    if dt_inner - dt_mid > timedelta(seconds=60): # how often to make a subdir change to 1 hour
+                    if dt_inner - dt_mid > timedelta(minutes=60): # how often to make a subdir change to 1 hour
                         break
 
                     old_path = path_inner
-                    path_inner = path + '/' + dt_inner.strftime('%H:%M')
+                    path_inner = path + '/' + dt_inner.strftime('%H')
                     if not os.path.exists(path_inner):
                         os.makedirs(path_inner)
                         proc = Process(target=wav_to_flac, args=(old_path,), daemon=True)
@@ -90,7 +91,7 @@ def start_logging():
                     wf = wave.open(wav_string, 'wb')
                     logger = setup_logger('audio_logger', log_string)
                     logger.info('Example of logging with ISO-8601 timestamp')
-                    end_time = dt_inner + timedelta(seconds=5) # how long our sound files are, change to 5 minutes
+                    end_time = dt_inner + timedelta(minutes=5) # how long our sound files are, change to 5 minutes
 
                     while True:
                         curr_time = datetime.now()
