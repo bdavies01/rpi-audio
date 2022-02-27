@@ -19,7 +19,7 @@ FORMAT = pyaudio.paInt24 #must save in format 24
 CHANNELS = 2 #CHANNELS is stereo
 RATE = 32000 #new setting at 32
 
-PORT = 5001
+PORT = 5002
 
 p = pyaudio.PyAudio()
 
@@ -65,7 +65,9 @@ def wav_to_flac(dir):
 def start_logging():
     socket_obj = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        while True:
+        # socket here
+        conn = None
+        while not conn:
             try:
                 socket_obj.bind(('', PORT))
                 socket_obj.listen(1) # Only allow one connection for now
@@ -74,11 +76,13 @@ def start_logging():
                 print('Connected by: ', addr)
             except socket.error:
                 pass
+
+        while True:
             dt_outer = datetime.now()
 
             while True:
                 dt_mid = datetime.now()
-                if dt_mid.date() != dt_outer.date(): # how often to make a main dir change to 1 day
+                if dt_mid.date() != dt_outer.date(): # change subdir when day changes
                     break
                 path = dt_mid.strftime('/media/pi/DDI_UCSC_LOGGING/audio_log_data/%Y_%m_%d')
                 if not os.path.exists(path):
@@ -88,21 +92,21 @@ def start_logging():
                 handler = None
                 while True:
                     dt_inner = datetime.now()
-                    if dt_inner.hour != dt_mid.hour: # how often to make a subdir change to 1 hour
+                    if dt_inner.hour != dt_mid.hour: # change subdir when hour changes
+                        proc = Process(target=wav_to_flac, args=(path_inner,), daemon=True)
+                        proc.start()
+
                         logger.removeHandler(handler)
                         del handler
                         gc.collect()
                         break
 
-                    old_path = path_inner
                     path_inner = path + '/' + dt_inner.strftime('%H')
                     if not os.path.exists(path_inner):
                         os.makedirs(path_inner)
                         log_string = path_inner + '/' + dt_inner.strftime('logfile_%H.log')
                         handler = setup_logger(logger, log_string)
                         logger.info('Log start')
-                        proc = Process(target=wav_to_flac, args=(old_path,), daemon=True)
-                        proc.start()
 
                     frames = []
                     wav_string = path_inner + '/' + dt_inner.strftime('soundfile_%H:%M:%S.wav')
